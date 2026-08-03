@@ -1,0 +1,50 @@
+# --- Configuración de Price Radar ---
+
+scraper:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  timeout: 20
+  # Segundos de espera entre requests al MISMO dominio (cortesía / anti-baneo)
+  delay_per_domain: 8
+  respect_robots: true
+  max_retries: 2
+
+scheduler:
+  # Cada cuántos minutos se recorre toda la lista de productos
+  interval_minutes: 30
+
+detector:
+  # Mínimo de observaciones históricas antes de poder declarar una anomalía
+  min_history: 8
+  # Caída mínima respecto a la mediana histórica para considerarlo error de precio
+  min_drop_pct: 35.0
+  # Umbral de MAD-score (robusto). Cuanto más alto, menos falsos positivos.
+  mad_threshold: 4.0
+  # Ventana de historial usada para el baseline (días)
+  window_days: 30
+  # No repetir la misma alerta para un producto antes de N horas
+  cooldown_hours: 12
+
+alerts:
+  telegram:
+    enabled: false
+    bot_token: ""   # de @BotFather
+    chat_id: ""     # tu chat id numérico
+
+web:
+  host: "127.0.0.1"
+  port: 8000
+
+# --- Productos a vigilar ---
+# Los productos se gestionan desde la aplicación (pestaña "Mis productos") y se
+# guardan en la base de datos. Esta sección solo sirve para cargar una lista
+# inicial la primera vez que arranca, si prefieres escribirla a mano.
+#
+# price_selector: selector CSS del elemento que contiene el precio.
+#   Si lo omites, se intenta autodetección (JSON-LD / itemprop / og:price).
+# attr: opcional, leer el precio de un atributo en vez del texto (ej. "content").
+targets: []
+  # - name: "Notebook X"
+  #   url: "https://tienda.cl/producto/notebook-x"
+  #   price_selector: ".product-price"
+  #   currency: "CLP"
+  #   enabled: true

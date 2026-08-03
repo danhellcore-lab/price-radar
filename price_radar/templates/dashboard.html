@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Price Radar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36;
+    --text: #e6e8ec; --muted: #8b93a1; --accent: #4da3ff; --alert: #ff5c5c; --ok: #3ecf8e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7f9; --panel:#fff; --border:#e2e5ea; --text:#1a1d23; --muted:#6b7280; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; }
+  header { display:flex; align-items:center; gap:1rem; padding:1rem 1.5rem; border-bottom:1px solid var(--border); }
+  h1 { font-size:1.1rem; margin:0; letter-spacing:.02em; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:.5rem .9rem; cursor:pointer; font-size:.85rem; }
+  button:disabled { opacity:.5; cursor:default; }
+  main { padding:1.5rem; max-width:1100px; margin:0 auto; }
+  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:2rem 0 .75rem; }
+  h2:first-child { margin-top:0; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:1rem; margin-bottom:.75rem; }
+  .row { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
+  .name { font-weight:600; }
+  .meta { color:var(--muted); font-size:.8rem; }
+  .price { font-size:1.3rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .alert { border-left:3px solid var(--alert); }
+  .badge { font-size:.7rem; padding:.15rem .45rem; border-radius:4px; background:var(--alert); color:#fff; }
+  a { color:var(--accent); text-decoration:none; word-break:break-all; }
+  svg { display:block; width:100%; height:64px; margin-top:.75rem; }
+  .empty { color:var(--muted); font-style:italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📡 Price Radar</h1>
+  <button id="run">Escanear ahora</button>
+  <span class="meta" id="status"></span>
+</header>
+<main>
+  <h2>Alertas recientes</h2>
+  <div id="alerts"></div>
+  <h2>Productos vigilados</h2>
+  <div id="products"></div>
+</main>
+<script>
+const fmt = (n, cur) => n == null ? "—" : `${cur||""} ${Number(n).toLocaleString("es-CL",{maximumFractionDigits:2})}`.trim();
+const when = ts => ts ? new Date(ts).toLocaleString("es-CL") : "—";
+
+function sparkline(points) {
+  if (points.length < 2) return "";
+  const w = 600, h = 64, pad = 4;
+  const vals = points.map(p => p.price);
+  const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1;
+  const d = points.map((p, i) => {
+    const x = pad + i * (w - 2*pad) / (points.length - 1);
+    const y = h - pad - (p.price - min) / span * (h - 2*pad);
+    return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  </svg>`;
+}
+
+async function load() {
+  const [products, alerts] = await Promise.all([
+    fetch("/api/products").then(r => r.json()),
+    fetch("/api/alerts").then(r => r.json()),
+  ]);
+
+  document.getElementById("alerts").innerHTML = alerts.length ? alerts.map(a => `
+    <div class="card alert">
+      <div class="row">
+        <div>
+          <span class="badge">-${a.drop_pct.toFixed(0)}%</span>
+          <span class="name">${a.name}</span>
+          <div class="meta">${a.reason}</div>
+          <div class="meta">${when(a.ts)} · ${a.notified ? "notificado" : "no notificado"}</div>
+          <a href="${a.url}" target="_blank" rel="noopener noreferrer">${a.url}</a>
+        </div>
+        <div class="price">${fmt(a.price, a.currency)}</div>
+      </div>
+    </div>`).join("") : `<div class="card empty">Sin alertas todavía.</div>`;
+
+  const container = document.getElementById("products");
+  container.innerHTML = products.length ? products.map(p => `
+    <div class="card" data-id="${p.id}">
+      <div class="row">
+        <div>
+          <div class="name">${p.name}</div>
+          <div class="meta">${p.observations} observaciones · rango ${fmt(p.min, p.currency)} – ${fmt(p.max, p.currency)}</div>
+          <div class="meta">Última lectura: ${when(p.last_ts)}${p.last_ok === false ? ` · ⚠️ ${p.last_error || "error"}` : ""}</div>
+          <a href="${p.url}" target="_blank" rel="noopener noreferrer">${p.url}</a>
+        </div>
+        <div class="price">${fmt(p.last_price, p.currency)}</div>
+      </div>
+      <div class="chart"></div>
+    </div>`).join("") : `<div class="card empty">No hay productos. Añádelos en config.yaml.</div>`;
+
+  for (const p of products) {
+    const hist = await fetch(`/api/products/${p.id}/history?days=90`).then(r => r.json());
+    const slot = container.querySelector(`[data-id="${p.id}"] .chart`);
+    if (slot) slot.innerHTML = sparkline(hist);
+  }
+}
+
+document.getElementById("run").onclick = async (e) => {
+  const btn = e.target, status = document.getElementById("status");
+  btn.disabled = true; status.textContent = "Escaneando…";
+  try {
+    const s = await fetch("/api/run", { method: "POST" }).then(r => r.json());
+    status.textContent = `${s.ok} ok · ${s.failed} fallos · ${s.alerts} alertas`;
+    await load();
+  } catch (err) {
+    status.textContent = "Error: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

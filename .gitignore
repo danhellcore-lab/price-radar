@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+build/
+dist/
+public/
+*.spec
+*.log
+*.exe
+*.ico
+config.local.yaml
+informe-ejemplo.html
+ripley_categorias.json
