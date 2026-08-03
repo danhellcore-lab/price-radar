@@ -249,6 +249,75 @@ class Paris(StoreAdapter):
         return found
 
 
+class Hites(StoreAdapter):
+    """Hites corre sobre Salesforce Commerce Cloud.
+
+    No hay un JSON de resultados como en Falabella, pero cada tarjeta lleva un
+    atributo `data-gtmselectitem` (analítica de Google) con los precios ya
+    separados: el de internet, el de tarjeta Hites y el descuento en pesos. Es
+    más fiable que leer los importes del texto, donde no se distingue cuál es
+    cuál.
+    """
+
+    name = "hites"
+    label = "Hites"
+    site = "hites.com"
+    how = "Buscador del sitio"
+    HOST = "https://www.hites.com"
+
+    def listing_urls(self, query: str, scraper: Any) -> list[str]:
+        return [f"{self.HOST}/search?q={quote_plus(query)}"]
+
+    def parse(self, html: str) -> list[Found]:
+        soup = BeautifulSoup(html, "lxml")
+        found: list[Found] = []
+        vistos: set[str] = set()
+
+        for tile in soup.select(".product-tile"):
+            raw = tile.get("data-gtmselectitem")
+            if not raw:
+                continue
+            try:
+                item = (json.loads(raw) or {}).get("item") or {}
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            name = (item.get("item_name") or "").strip()
+            sku = str(item.get("item_id") or "")
+            if not name or not sku or sku in vistos:
+                continue
+
+            precio = _to_number(item.get("price"))
+            con_tarjeta = _to_number(item.get("hites_price"))
+            candidatos = [p for p in (precio, con_tarjeta) if p]
+            if not candidatos:
+                continue
+            actual = min(candidatos)
+
+            # `discount` viene en pesos sobre el precio de internet, no en
+            # porcentaje: el precio anterior es la suma de ambos.
+            rebaja = _to_number(item.get("discount"))
+            referencia = (precio + rebaja) if (precio and rebaja) else None
+
+            link = tile.find("a", href=True)
+            href = link["href"] if link else f"/{sku}.html"
+            url = href if href.startswith("http") else f"{self.HOST}{href}"
+
+            vistos.add(sku)
+            found.append(
+                Found(
+                    store=self.name,
+                    name=name,
+                    url=url,
+                    price=actual,
+                    reference_price=referencia,
+                    brand=str(item.get("item_brand") or ""),
+                    sku=sku,
+                )
+            )
+        return found
+
+
 class Ripley(StoreAdapter):
     """Ripley prohíbe /search/ en su robots.txt, así que no se usa la búsqueda.
 
@@ -416,5 +485,5 @@ class Ripley(StoreAdapter):
         return found
 
 
-ADAPTERS: list[StoreAdapter] = [Falabella(), Paris(), Ripley(), Sodimac()]
+ADAPTERS: list[StoreAdapter] = [Falabella(), Hites(), Paris(), Ripley(), Sodimac()]
 BY_NAME = {a.name: a for a in ADAPTERS}

@@ -17,7 +17,7 @@ from price_radar.alerts import explain, format_alert
 from price_radar.detector import Detector
 from price_radar.discovery import Discovery, model_codes, same_product, tokens
 from price_radar.scraper import autodetect_price, parse_price
-from price_radar.stores import Falabella, Found, Paris, Ripley, Sodimac
+from price_radar.stores import Falabella, Found, Hites, Paris, Ripley, Sodimac
 
 failures: list[str] = []
 
@@ -177,6 +177,35 @@ check("envase pequeño: referencia sin inflar", ml[1].reference_price, 75990.0)
 check("envase pequeño: descuento realista", round(ml[1].discount_pct), 51)
 check("unidades 'un' tambien se ignoran", ml[2].price, 7990.0)
 check("unidades 'un': referencia", ml[2].reference_price, 8990.0)
+
+# Hites publica los precios en el atributo de analítica de cada tarjeta.
+# `discount` viene en PESOS sobre el precio de internet, no en porcentaje:
+# tomarlo como porcentaje daría un precio anterior absurdo.
+HITES_HTML = """<html><body>
+<div class="product-tile" data-pid="944488001" data-gtmselectitem='{"item":{
+  "item_id":"944488001","item_name":"Notebook Gamer Lenovo Loq","item_brand":"Lenovo",
+  "price":749990,"hites_price":719990,"discount":350000}}'>
+  <a href="/notebook-gamer-944488001.html">ficha</a>
+</div>
+<div class="product-tile" data-pid="222" data-gtmselectitem='{"item":{
+  "item_id":"222","item_name":"Sin rebaja","price":50000}}'>
+  <a href="/sin-rebaja-222.html">ficha</a>
+</div>
+<div class="product-tile" data-pid="333" data-gtmselectitem='{roto'>
+  <a href="/roto.html">ficha</a>
+</div>
+</body></html>"""
+
+hit = Hites().parse(HITES_HTML)
+check("hites parsea las tarjetas validas", len(hit), 2)
+check("hites toma el precio con tarjeta", hit[0].price, 719990.0)
+check("hites suma el descuento en pesos", hit[0].reference_price, 1099990.0)
+check("hites calcula el descuento real", round(hit[0].discount_pct), 35)
+check("hites sin rebaja no inventa referencia", hit[1].reference_price, None)
+check("hites arma url absoluta", hit[0].url,
+      "https://www.hites.com/notebook-gamer-944488001.html")
+check("hites ignora el json roto", [h.sku for h in hit], ["944488001", "222"])
+check("hites html vacio no revienta", Hites().parse("<html></html>"), [])
 
 # Sodimac comparte plataforma con Falabella: mismo parser, distinto dominio.
 check("sodimac usa el parser del grupo", len(Sodimac().parse(FALABELLA_HTML)), 1)
