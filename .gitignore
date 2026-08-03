@@ -10,5 +10,7 @@ public/
 *.exe
 *.ico
 config.local.yaml
+neon.txt
+telegram.txt
 informe-ejemplo.html
 ripley_categorias.json
