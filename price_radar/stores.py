@@ -83,6 +83,9 @@ def _dig(node: Any, *path: str) -> Any:
 class StoreAdapter(ABC):
     name: str
     label: str
+    site: str = ""          # dominio, para mostrarlo en la interfaz
+    how: str = ""           # por dónde entra: búsqueda, categorías…
+    note: str = ""          # limitación conocida, si la hay
 
     @abstractmethod
     def listing_urls(self, query: str, scraper: Any) -> list[str]:
@@ -158,6 +161,8 @@ class Falabella(FalabellaGroup):
     label = "Falabella"
     host = "https://www.falabella.com"
     path = "/falabella-cl/search"
+    site = "falabella.com"
+    how = "Buscador del sitio"
 
 
 class Sodimac(FalabellaGroup):
@@ -165,6 +170,9 @@ class Sodimac(FalabellaGroup):
     label = "Sodimac"
     host = "https://www.sodimac.cl"
     path = "/sodimac-cl/search"
+    site = "sodimac.cl"
+    how = "Buscador del sitio"
+    note = "Solo ferretería, hogar y construcción"
 
 
 # "$4.233 x 100 ml", "$7.990 x 100 un": precio por unidad de medida, no lo que
@@ -190,6 +198,9 @@ class Paris(StoreAdapter):
 
     name = "paris"
     label = "Paris"
+    site = "paris.cl"
+    how = "Buscador del sitio"
+    note = "Bloquea a los servidores de GitHub: solo funciona desde tu PC"
     HOST = "https://www.paris.cl"
 
     def listing_urls(self, query: str, scraper: Any) -> list[str]:
@@ -248,6 +259,9 @@ class Ripley(StoreAdapter):
 
     name = "ripley"
     label = "Ripley"
+    site = "simple.ripley.cl"
+    how = "Páginas de categoría (su robots.txt prohíbe el buscador)"
+    note = "Bloquea a los servidores de GitHub: solo funciona desde tu PC"
 
     SITEMAP_INDEX = "https://simple.ripley.cl/sitemap_ripley_categorias.xml"
     CACHE_DAYS = 7

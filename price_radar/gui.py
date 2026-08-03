@@ -18,6 +18,7 @@ from .config import Config, Target, data_dir, resource_path
 from .engine import Engine
 from .scraper import Scraper
 from .storage import Storage
+from .stores import ADAPTERS
 
 BG = "#f4f6f9"
 CARD = "#ffffff"
@@ -185,6 +186,8 @@ class PriceRadarApp:
 
         self.scanning = False
         self.events: queue.Queue[tuple] = queue.Queue()
+        # Resultado de la última comprobación manual de tiendas, si se hizo.
+        self._store_states: dict[str, str] = {}
 
         self.root = Tk()
         self.root.title("Price Radar — cazador de errores de precio")
@@ -263,15 +266,18 @@ class PriceRadarApp:
         self.tab_categories = ttk.Frame(self.tabs, padding=12)
         self.tab_products = ttk.Frame(self.tabs, padding=12)
         self.tab_alerts = ttk.Frame(self.tabs, padding=12)
+        self.tab_stores = ttk.Frame(self.tabs, padding=12)
         self.tab_settings = ttk.Frame(self.tabs, padding=12)
         self.tab_help = ttk.Frame(self.tabs, padding=12)
         self.tabs.add(self.tab_categories, text="  Categorías  ")
         self.tabs.add(self.tab_alerts, text="  Alertas  ")
         self.tabs.add(self.tab_products, text="  Productos encontrados  ")
+        self.tabs.add(self.tab_stores, text="  Páginas vigiladas  ")
         self.tabs.add(self.tab_settings, text="  Ajustes  ")
         self.tabs.add(self.tab_help, text="  Ayuda  ")
 
         self._build_categories_tab()
+        self._build_stores_tab()
         self._build_products_tab()
         self._build_alerts_tab()
         self._build_settings_tab()
@@ -329,6 +335,63 @@ class PriceRadarApp:
             style="Hint.TLabel",
             justify="center",
         )
+
+    def _build_stores_tab(self) -> None:
+        frm = self.tab_stores
+
+        ttk.Label(frm, text="Estas son las páginas que el radar consulta",
+                  style="Big.TLabel").pack(anchor=W)
+        ttk.Label(
+            frm,
+            text="Se eligieron porque publican sus listados de forma que se pueden leer "
+            "con fiabilidad y porque su robots.txt lo permite. Ninguna cubre todas las "
+            "categorías: que una traiga 0 productos en «zapatillas» es normal.",
+            style="Hint.TLabel",
+            wraplength=780,
+            justify=LEFT,
+        ).pack(anchor=W, pady=(2, 10))
+
+        bar = ttk.Frame(frm)
+        bar.pack(fill=X, pady=(0, 8))
+        self.check_stores_btn = ttk.Button(
+            bar, text="🔌  Comprobar si responden", command=self.check_stores,
+            style="Accent.TButton",
+        )
+        self.check_stores_btn.pack(side=LEFT)
+        ttk.Button(bar, text="Abrir la página", command=self.open_store).pack(side=LEFT, padx=6)
+        self.stores_status = ttk.Label(bar, text="", style="Hint.TLabel")
+        self.stores_status.pack(side=LEFT, padx=10)
+
+        columns = ("sitio", "acceso", "productos", "ultima", "estado")
+        self.stores_tree = ttk.Treeview(frm, columns=columns, show="tree headings",
+                                        selectmode="browse")
+        self.stores_tree.heading("#0", text="Tienda")
+        self.stores_tree.column("#0", width=110, anchor=W)
+        for col, label, width in (
+            ("sitio", "Dirección", 150),
+            ("acceso", "Cómo la consulta", 230),
+            ("productos", "Productos vigilados", 130),
+            ("ultima", "Última lectura", 120),
+            ("estado", "Estado", 90),
+        ):
+            self.stores_tree.heading(col, text=label)
+            self.stores_tree.column(col, width=width, anchor=W)
+        self.stores_tree.pack(fill=BOTH, expand=True)
+        self.stores_tree.tag_configure("aviso", foreground=DANGER)
+
+        self.stores_note = ttk.Label(frm, text="", style="Hint.TLabel", wraplength=780,
+                                     justify=LEFT)
+        self.stores_note.pack(anchor=W, pady=(10, 0))
+
+        ttk.Label(
+            frm,
+            text="Probadas y descartadas: Lider, PC Factory, MercadoLibre, Hites, La Polar, "
+            "ABCDin, Tricot, Preunic, Easy y SP Digital. Cargan los precios con JavaScript "
+            "o bloquean el acceso, así que no se pueden leer de esta forma.",
+            style="Hint.TLabel",
+            wraplength=780,
+            justify=LEFT,
+        ).pack(anchor=W, pady=(8, 0))
 
     def _build_products_tab(self) -> None:
         bar = ttk.Frame(self.tab_products)
@@ -573,6 +636,9 @@ class PriceRadarApp:
                 values=(len(in_cat) or "buscando…", label),
             )
 
+        # --- páginas vigiladas ---
+        self._refresh_stores(products)
+
         # --- productos ---
         self.tree.delete(*self.tree.get_children())
         if not products:
@@ -628,6 +694,86 @@ class PriceRadarApp:
                     human_time(a["ts"]),
                 ),
             )
+
+    # ---------- páginas vigiladas ----------
+
+    def _refresh_stores(self, products: list[dict]) -> None:
+        self.stores_tree.delete(*self.stores_tree.get_children())
+        latest = self.storage.latest_observations()
+
+        # Última lectura por tienda, en una pasada.
+        ultima: dict[str, str] = {}
+        for p in products:
+            obs = latest.get(int(p["id"]))
+            if not obs:
+                continue
+            tienda = p["store"]
+            if tienda and (tienda not in ultima or obs["ts"] > ultima[tienda]):
+                ultima[tienda] = obs["ts"]
+
+        notas = []
+        for adapter in ADAPTERS:
+            cuantos = sum(1 for p in products if p["store"] == adapter.name)
+            estado = self._store_states.get(adapter.name)
+            if estado is None:
+                estado = "✓ Activa" if cuantos else "· Sin datos"
+            tags = ("aviso",) if estado.startswith("✗") else ()
+
+            self.stores_tree.insert(
+                "", END, iid=adapter.name, text=adapter.label,
+                values=(adapter.site, adapter.how, cuantos or "—",
+                        human_time(ultima.get(adapter.name)), estado),
+                tags=tags,
+            )
+            if adapter.note:
+                notas.append(f"• {adapter.label}: {adapter.note}")
+
+        if self.viewer_mode:
+            notas.append(
+                "• La búsqueda la hace un servidor de GitHub, no tu PC. Las tiendas que "
+                "bloquean centros de datos no aportan productos a la nube."
+            )
+        self.stores_note.configure(text="\n".join(notas))
+
+    def check_stores(self) -> None:
+        """Pide una página real a cada tienda y reporta si responde."""
+        self.check_stores_btn.state(["disabled"])
+        self.stores_status.configure(text="Comprobando…", foreground=MUTED)
+
+        def work() -> None:
+            resultados: dict[str, str] = {}
+            for adapter in ADAPTERS:
+                try:
+                    urls = adapter.listing_urls("notebook", self.engine.scraper)
+                    if not urls:
+                        resultados[adapter.name] = "· Sin categoría"
+                        continue
+                    html = self.engine.scraper.get_html(urls[0])
+                    encontrados = len(adapter.parse(html))
+                    resultados[adapter.name] = (
+                        f"✓ Responde" if encontrados else "· Responde, 0 aquí"
+                    )
+                except Exception as exc:
+                    detalle = str(exc)
+                    if "403" in detalle:
+                        resultados[adapter.name] = "✗ Bloqueada"
+                    elif "robots" in detalle.lower():
+                        resultados[adapter.name] = "✗ robots.txt"
+                    else:
+                        resultados[adapter.name] = "✗ Sin respuesta"
+            self.events.put(("stores", resultados))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def open_store(self) -> None:
+        sel = self.stores_tree.selection()
+        if not sel:
+            messagebox.showinfo("Price Radar", "Selecciona una tienda de la lista.")
+            return
+        for adapter in ADAPTERS:
+            if adapter.name == sel[0]:
+                webbrowser.open(f"https://{adapter.site}")
+                return
 
     # ---------- acciones de categorías ----------
 
@@ -786,6 +932,16 @@ class PriceRadarApp:
                 kind = event[0]
                 if kind == "status":
                     self.status_var.set(event[1])
+                elif kind == "stores":
+                    self._store_states = event[1]
+                    self.check_stores_btn.state(["!disabled"])
+                    caidas = sum(1 for v in event[1].values() if v.startswith("✗"))
+                    self.stores_status.configure(
+                        text="Todas responden" if not caidas
+                        else f"{caidas} tienda(s) no responden desde aquí",
+                        foreground=OK if not caidas else DANGER,
+                    )
+                    self.refresh()
                 elif kind == "done":
                     self._scan_finished(event[1])
                 elif kind == "error":
