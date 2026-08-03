@@ -32,9 +32,21 @@ def main() -> int:
         stream=sys.stdout,
     )
 
-    database_url = os.environ.get("DATABASE_URL", "").strip()
+    from price_radar.db import clean_url, is_postgres_url
+
+    raw = os.environ.get("DATABASE_URL", "")
+    database_url = clean_url(raw)
     if not database_url:
         print("ERROR: falta DATABASE_URL. Configúralo como secret del repositorio.")
+        return 1
+
+    # Diagnóstico sin revelar la contraseña: si el secreto llega deformado, esto
+    # lo delata en vez de caer silenciosamente a una base local que se borra.
+    if not is_postgres_url(database_url):
+        print(f"ERROR: DATABASE_URL no parece PostgreSQL.")
+        print(f"  longitud recibida: {len(raw)} caracteres")
+        print(f"  primeros caracteres: {database_url[:13]!r}")
+        print("  Debe empezar por 'postgresql://'. Vuelve a guardar el secreto.")
         return 1
 
     config = Config.load()
@@ -46,6 +58,12 @@ def main() -> int:
 
     storage = Storage(url=database_url)
     log.info("Base de datos: %s", storage.location)
+    if not storage.db.postgres:
+        # Sin esto, un secreto mal configurado hacía que todo "funcionara" pero
+        # escribiendo en el disco temporal del servidor, que se borra al acabar.
+        print("ERROR: se esperaba PostgreSQL y se obtuvo una base local.")
+        print("Los datos se perderían al terminar la ejecución. Abortando.")
+        return 1
 
     # Siembra inicial: solo si la base está vacía, para que después mandes tú
     # desde la app y no se repongan categorías que borraste.

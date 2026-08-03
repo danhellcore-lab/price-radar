@@ -20,14 +20,30 @@ def is_postgres_url(url: str | None) -> bool:
     return urlparse(url).scheme in ("postgres", "postgresql", "postgresql+psycopg")
 
 
+def clean_url(raw: str | None) -> str | None:
+    """Limpia una cadena de conexión copiada a mano.
+
+    Al pasar por el portapapeles, el Bloc de notas o la tubería de PowerShell,
+    la cadena puede llegar con marca de orden de bytes (BOM), comillas o saltos
+    de línea. Cualquiera de esos caracteres invisibles rompe el esquema de la
+    URL y hacía que la app se fuera a SQLite en silencio, guardando los datos
+    en un disco temporal que se borra.
+    """
+    if not raw:
+        return None
+    value = raw.strip().lstrip("﻿").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    return value or None
+
+
 def resolve_url(explicit: str | None = None) -> str | None:
     """Cadena de conexión a la nube, si la hay.
 
     Prioridad: lo que se pase por código > variable de entorno (que es como la
     inyecta GitHub Actions) > nada, en cuyo caso se usa SQLite local.
     """
-    candidate = explicit or os.environ.get("DATABASE_URL")
-    return candidate.strip() if candidate and candidate.strip() else None
+    return clean_url(explicit) or clean_url(os.environ.get("DATABASE_URL"))
 
 
 class Database:

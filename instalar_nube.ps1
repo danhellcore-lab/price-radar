@@ -46,8 +46,16 @@ $usuario = (gh api user --jq .login)
 Write-Host "    Conectado como: $usuario"
 
 Paso 2 "Creando el repositorio y subiendo el codigo..."
-$existe = gh repo view "$usuario/$Repo" 2>$null
-if ($LASTEXITCODE -eq 0) {
+# Con ErrorActionPreference=Stop, PowerShell convierte en excepcion cualquier
+# cosa que un .exe escriba en stderr. Aqui "no existe" es una respuesta valida,
+# no un fallo, asi que se consulta el codigo de salida a mano.
+$anterior = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+gh repo view "$usuario/$Repo" *>$null
+$yaExiste = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = $anterior
+
+if ($yaExiste) {
     Write-Host "    Ya existia; se reutiliza."
     git remote remove origin 2>$null | Out-Null
     git remote add origin "https://github.com/$usuario/$Repo.git"
@@ -64,12 +72,12 @@ if ($TelegramChat) { $TelegramChat | gh secret set TELEGRAM_CHAT_ID --repo "$usu
 gh variable set CATEGORIES --repo "$usuario/$Repo" --body $Categorias
 
 Paso 4 "Activando la web publica (GitHub Pages)..."
-try {
-    gh api "repos/$usuario/$Repo/pages" -X POST -f "build_type=workflow" | Out-Null
-    Write-Host "    Pages activado."
-} catch {
-    Write-Host "    Pages ya estaba activado."
-}
+$anterior = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+gh api "repos/$usuario/$Repo/pages" -X POST -f "build_type=workflow" *>$null
+if ($LASTEXITCODE -eq 0) { Write-Host "    Pages activado." }
+else { Write-Host "    Pages ya estaba activado (o se activara tras la primera ejecucion)." }
+$ErrorActionPreference = $anterior
 
 Paso 5 "Lanzando la primera busqueda..."
 gh workflow run scan.yml --repo "$usuario/$Repo"
