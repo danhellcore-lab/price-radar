@@ -148,6 +148,36 @@ check("paris toma el precio menor", par[0].price, 249990.0)
 check("paris toma el mayor como referencia", par[0].reference_price, 349990.0)
 check("paris arma url absoluta", par[0].url, "https://www.paris.cl/notebook-mouse-42")
 
+# El precio por unidad de medida NO es lo que se paga. Paris lo muestra junto al
+# precio real; contarlo generaba alertas falsas por las dos puntas.
+PARIS_ML = """<html><body>
+<div data-cnstrc-item-id="7" data-cnstrc-item-name="Body Mist Cloud 236 ML">
+  <a href="/body-mist-236">ficha</a>
+  <span>54%</span><span>$9.990</span><span>(</span><span>$4.233 x 100 ml</span><span>)</span>
+  <span>$21.990</span>
+</div>
+<div data-cnstrc-item-id="8" data-cnstrc-item-name="Perfume EDP 30 ml">
+  <a href="/perfume-30">ficha</a>
+  <span>51%</span><span>$36.990</span><span>$123.300 x 100 ml</span><span>$75.990</span>
+</div>
+<div data-cnstrc-item-id="9" data-cnstrc-item-name="Toalla 100 un">
+  <a href="/toalla">ficha</a><span>$7.990</span><span>$7.990 x 100 un</span><span>$8.990</span>
+</div>
+</body></html>"""
+
+ml = Paris().parse(PARIS_ML)
+check("parsea los tres productos", len(ml), 3)
+check("ignora el precio por mililitro barato", ml[0].price, 9990.0)
+check("referencia correcta pese al precio unitario", ml[0].reference_price, 21990.0)
+check("descuento realista, no del 81%", round(ml[0].discount_pct), 55)
+# En envases pequeños el precio por 100 ml es MAYOR que el real: si se colara,
+# se tomaría como "precio anterior" e inventaría un descuento enorme.
+check("envase pequeño: precio correcto", ml[1].price, 36990.0)
+check("envase pequeño: referencia sin inflar", ml[1].reference_price, 75990.0)
+check("envase pequeño: descuento realista", round(ml[1].discount_pct), 51)
+check("unidades 'un' tambien se ignoran", ml[2].price, 7990.0)
+check("unidades 'un': referencia", ml[2].reference_price, 8990.0)
+
 # Sodimac comparte plataforma con Falabella: mismo parser, distinto dominio.
 check("sodimac usa el parser del grupo", len(Sodimac().parse(FALABELLA_HTML)), 1)
 check("sodimac apunta a su dominio",

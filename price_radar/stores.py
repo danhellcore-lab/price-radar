@@ -167,12 +167,25 @@ class Sodimac(FalabellaGroup):
     path = "/sodimac-cl/search"
 
 
+# "$4.233 x 100 ml", "$7.990 x 100 un": precio por unidad de medida, no lo que
+# se paga. Paris lo muestra junto al precio real y contarlo como un precio más
+# rompía las dos puntas: en un envase grande es menor que el precio real (y se
+# tomaba como el precio), y en uno pequeño es mucho mayor (y se tomaba como el
+# precio anterior, inventando un descuentazo).
+UNIT_PRICE_RE = re.compile(
+    r"x\s*\d+(?:[.,]\d+)?\s*(ml|cc|l|lt|lts|g|gr|kg|un|und|unid|unidad|m|mt|cm|hoja|hojas|"
+    r"rollo|rollos|pack|dosis|lavado|lavados|capsula|capsulas)\b",
+    re.IGNORECASE,
+)
+
+
 class Paris(StoreAdapter):
     """Paris no incrusta un JSON de resultados, pero sí marca cada tarjeta con
     atributos `data-cnstrc-*` (Constructor.io) que traen nombre e id.
 
     El precio se lee del texto de la tarjeta: aparecen varios (con tarjeta, de
     internet, normal). El menor es lo que se paga; el mayor es la referencia.
+    Los precios por unidad de medida se descartan antes de comparar.
     """
 
     name = "paris"
@@ -181,6 +194,19 @@ class Paris(StoreAdapter):
 
     def listing_urls(self, query: str, scraper: Any) -> list[str]:
         return [f"{self.HOST}/search?q={quote_plus(query)}"]
+
+    @staticmethod
+    def _real_prices(card: Any) -> list[float]:
+        """Importes que se pagan de verdad, sin los precios por unidad."""
+        montos: set[float] = set()
+        for fragment in card.stripped_strings:
+            if UNIT_PRICE_RE.search(fragment):
+                continue
+            for match in re.findall(r"\$\s?[\d.]+", fragment):
+                value = _to_number(match)
+                if value:
+                    montos.add(value)
+        return sorted(montos)
 
     def parse(self, html: str) -> list[Found]:
         soup = BeautifulSoup(html, "lxml")
@@ -192,10 +218,7 @@ class Paris(StoreAdapter):
             if not name or not link:
                 continue
 
-            text = " ".join(card.stripped_strings)
-            amounts = sorted(
-                {a for a in (_to_number(m) for m in re.findall(r"\$\s?[\d.]+", text)) if a}
-            )
+            amounts = self._real_prices(card)
             if not amounts:
                 continue
 
