@@ -168,6 +168,23 @@ check("traduce token invalido",
 check("traduce chat inexistente",
       "chat id" in explain("Bad Request: chat not found").lower(), True)
 
+# ---------- la configuración no debe vivir en el repositorio ----------
+# La configuración guarda la contraseña de la base en la nube. Si se escribiera
+# dentro del proyecto, un `git add .` la publicaría.
+from price_radar.config import CONFIG_PATH, ROOT, data_dir
+
+check("los datos no se guardan en el proyecto", ROOT in data_dir().parents, False)
+check("la configuración no está en el proyecto", str(CONFIG_PATH).startswith(str(ROOT)), False)
+
+from price_radar.db import clean_url, is_postgres_url
+
+BOM = "﻿"
+check("limpia el BOM invisible", is_postgres_url(clean_url(BOM + "postgresql://a:b@c/d")), True)
+check("limpia comillas", is_postgres_url(clean_url("'postgresql://a:b@c/d'")), True)
+check("limpia saltos de linea", is_postgres_url(clean_url("postgresql://a:b@c/d\r\n")), True)
+check("rechaza vacío", is_postgres_url(clean_url("")), False)
+check("rechaza otro motor", is_postgres_url(clean_url("mysql://a:b@c/d")), False)
+
 # ---------- respeto a robots.txt ----------
 check("ripley no usa /search/ para descubrir",
       any("/search/" in u for u in Ripley().INTERNAL), False)

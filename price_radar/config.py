@@ -12,15 +12,15 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def data_dir() -> Path:
-    """Dónde viven config y base de datos.
+    """Dónde viven la configuración y la base de datos.
 
-    Congelado en un .exe la carpeta del programa puede ser de solo lectura
-    (Program Files), así que los datos van a %APPDATA%\\PriceRadar.
+    SIEMPRE fuera de la carpeta del proyecto, tanto en el .exe como al ejecutar
+    el código fuente. Antes, en modo desarrollo se usaba la carpeta del
+    proyecto, y ahí la configuración incluye la contraseña de la base en la
+    nube: un `git add` la habría publicado en el repositorio. Además, empaquetado
+    en Program Files la carpeta del programa puede ser de solo lectura.
     """
-    if getattr(sys, "frozen", False):
-        base = Path(os.environ.get("APPDATA", Path.home())) / "PriceRadar"
-    else:
-        base = ROOT
+    base = Path(os.environ.get("APPDATA") or Path.home() / ".config") / "PriceRadar"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
