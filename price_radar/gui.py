@@ -5,6 +5,7 @@ los errores explican cómo arreglarlos en vez de mostrar una traza técnica.
 """
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import webbrowser
@@ -19,6 +20,8 @@ from .engine import Engine
 from .scraper import Scraper
 from .storage import Storage
 from .stores import ADAPTERS
+
+log = logging.getLogger(__name__)
 
 BG = "#f4f6f9"
 CARD = "#ffffff"
@@ -179,10 +182,26 @@ class AddProductDialog(tk.Toplevel):
 class PriceRadarApp:
     def __init__(self) -> None:
         self.config = Config.load()
-        self.storage = Storage(url=self.config.cloud.get("database_url") or None)
+        configurada = (self.config.cloud.get("database_url") or "").strip()
+        log.info("Configuración leída de: %s", self.config.path)
+        log.info("Nube configurada: %s", "sí" if configurada else "NO")
+
+        self.cloud_error = ""
+        try:
+            self.storage = Storage(url=configurada or None)
+        except Exception as exc:
+            # Si la nube no responde (Neon dormido, sin internet), se sigue
+            # trabajando en local en vez de no abrir. Pero hay que DECIRLO:
+            # antes esto se veía como "perdí todas mis categorías".
+            log.exception("No se pudo abrir la base configurada")
+            self.cloud_error = str(exc)
+            self.storage = Storage()
+
         self.engine = Engine(self.config, self.storage)
         # En modo nube la búsqueda la hace GitHub Actions; aquí solo se mira.
         self.viewer_mode = self.storage.db.postgres
+        log.info("Base en uso: %s (modo %s)", self.storage.location,
+                 "nube" if self.viewer_mode else "local")
 
         self.scanning = False
         self.events: queue.Queue[tuple] = queue.Queue()
@@ -204,6 +223,15 @@ class PriceRadarApp:
         self.refresh()
         self.root.after(200, self._drain_events)
         self._schedule_auto_scan()
+
+        if self.cloud_error:
+            self.root.after(400, lambda: messagebox.showwarning(
+                "No pude conectar con la nube",
+                "Estás viendo la base local de este computador, no la de la nube.\n\n"
+                f"Motivo: {self.cloud_error[:200]}\n\n"
+                "Tus datos en la nube están intactos. Revisa tu conexión a internet "
+                "y vuelve a abrir la aplicación.",
+            ))
 
     # ---------- construcción de la interfaz ----------
 
