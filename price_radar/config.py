@@ -11,15 +11,30 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _exe_dir() -> Path | None:
+    """Carpeta donde está el ejecutable, si corremos empaquetados."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return None
+
+
 def data_dir() -> Path:
     """Dónde viven la configuración y la base de datos.
 
-    SIEMPRE fuera de la carpeta del proyecto, tanto en el .exe como al ejecutar
-    el código fuente. Antes, en modo desarrollo se usaba la carpeta del
-    proyecto, y ahí la configuración incluye la contraseña de la base en la
-    nube: un `git add` la habría publicado en el repositorio. Además, empaquetado
-    en Program Files la carpeta del programa puede ser de solo lectura.
+    Modo portátil primero: si junto al ejecutable hay un `config.yaml`, se usa
+    esa carpeta. Es lo que permite instalar el programa con su configuración ya
+    puesta, sin depender de %APPDATA%, que algunos entornos redirigen a una
+    carpeta espejo (y entonces el programa lee una configuración distinta de la
+    que se escribió, sin que nada falle a la vista).
+
+    Si no, %APPDATA%\\PriceRadar. Nunca la carpeta del proyecto: la
+    configuración lleva la contraseña de la base en la nube y un `git add` la
+    publicaría.
     """
+    junto_al_exe = _exe_dir()
+    if junto_al_exe and (junto_al_exe / "config.yaml").exists():
+        return junto_al_exe
+
     base = Path(os.environ.get("APPDATA") or Path.home() / ".config") / "PriceRadar"
     base.mkdir(parents=True, exist_ok=True)
     return base
