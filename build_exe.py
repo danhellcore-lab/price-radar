@@ -5,6 +5,7 @@ Resultado: dist/PriceRadar.exe (un solo archivo, sin instalación)
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -61,16 +62,58 @@ def main() -> int:
     exe = ROOT / "dist" / "PriceRadar.exe"
     size = exe.stat().st_size / 1024 / 1024
     print(f"\nListo: {exe}  ({size:.1f} MB)")
-
-    # Copiarlo al Escritorio es lo que hace que sea "doble clic y ya".
-    desktop = Path.home() / "Desktop"
-    if desktop.is_dir():
-        try:
-            shutil.copy2(exe, desktop / "PriceRadar.exe")
-            print(f"Copiado al Escritorio: {desktop / 'PriceRadar.exe'}")
-        except OSError as exc:
-            print(f"No pude copiarlo al Escritorio ({exc}). Hazlo a mano desde dist\\.")
+    instalar(exe)
     return 0
+
+
+def instalar(exe: Path) -> None:
+    """Instala el programa y crea los accesos directos.
+
+    El ejecutable NO va en el Escritorio: allí se borra sin querer con
+    facilidad y desaparece el programa entero. Va a una carpeta propia, y en el
+    Escritorio y el menú Inicio quedan accesos directos, que si se borran no se
+    llevan nada por delante.
+    """
+    destino = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "PriceRadar"
+    destino.mkdir(parents=True, exist_ok=True)
+    instalado = destino / "PriceRadar.exe"
+
+    try:
+        shutil.copy2(exe, instalado)
+        print(f"Instalado en: {instalado}")
+    except OSError as exc:
+        print(f"No pude instalarlo ({exc}); usa el de dist\\.")
+        return
+
+    icono = ROOT / "icon.ico"
+    if icono.exists():
+        shutil.copy2(icono, destino / "icon.ico")
+
+    escritorio = Path.home() / "Desktop"
+    menu = (Path(os.environ.get("APPDATA", Path.home())) / "Microsoft" / "Windows" /
+            "Start Menu" / "Programs")
+    for carpeta, etiqueta in ((escritorio, "Escritorio"), (menu, "menú Inicio")):
+        if not carpeta.is_dir():
+            continue
+        try:
+            crear_acceso_directo(carpeta / "Price Radar.lnk", instalado, destino)
+            print(f"Acceso directo en el {etiqueta}")
+        except Exception as exc:
+            print(f"No pude crear el acceso directo en el {etiqueta}: {exc}")
+
+
+def crear_acceso_directo(destino_lnk: Path, exe: Path, carpeta_trabajo: Path) -> None:
+    ps = (
+        "$w = New-Object -ComObject WScript.Shell; "
+        f"$s = $w.CreateShortcut('{destino_lnk}'); "
+        f"$s.TargetPath = '{exe}'; "
+        f"$s.WorkingDirectory = '{carpeta_trabajo}'; "
+        f"$s.IconLocation = '{exe},0'; "
+        "$s.Description = 'Price Radar - caza errores de precio'; "
+        "$s.Save()"
+    )
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True,
+                   capture_output=True)
 
 
 if __name__ == "__main__":
