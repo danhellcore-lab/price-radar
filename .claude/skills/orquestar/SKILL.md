@@ -7,6 +7,14 @@ description: Antes de ejecutar una tarea, lanza sub-agentes que (1) optimizan el
 
 Entrada: la tarea del usuario (`$ARGUMENTS`). Si esta vacia, pidela.
 
+## Paso 0: Verificar e instalar prompt-master
+
+1. Comprueba si `prompt-master` esta disponible (listado de skills, o carpeta `prompt-master` en `.claude/skills/` o `~/.claude/skills/`).
+2. Si ya esta, sigue al Paso 1 sin decir nada.
+3. Si NO esta, **avisa al usuario ANTES de instalar**, con este texto: "prompt-master no esta instalado. Voy a instalarlo ahora para poder optimizar el prompt."
+4. Luego instalalo: busca la skill con `SearchSkills` ("prompt-master") y agregala; si no aparece, buscala con `SuggestSkills`. Si tampoco se puede, pide al usuario la fuente (repo o carpeta) y copiala a `.claude/skills/prompt-master/`.
+5. Confirma en una linea que quedo instalada (o que no se pudo y que el preparador usara su propio criterio).
+
 ## Paso 1: Sub-agente "preparador" (siempre `model: haiku`)
 
 Lanza UN solo sub-agente con la herramienta Agent (`subagent_type: general-purpose`, `model: haiku`) con este encargo:
